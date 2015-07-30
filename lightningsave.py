@@ -3,6 +3,34 @@ import sublime_plugin
 import os
 import subprocess
 import json
+from . import semver
+
+
+def plugin_loaded():
+    print("WE ARE TOTALLY LOADED!")
+    try:
+        p = subprocess.Popen(["force", "version"], stdout=subprocess.PIPE)
+        version = p.communicate()[0].decode("utf-8").replace("\n", "")
+
+        if version != "dev":
+            version = version[1:]
+            if semver.match(version, "<0.22.26"):
+                message = (u"Sublime Lightning\n\n" +
+                           u"You are using version " + version + " of the " +
+                           u"Force CLI.\n\nThis version of Sublime Lightning" +
+                           u" requires version 0.22.26 or greater.\n\n" +
+                           u"Please download the latest version from " +
+                           u"force-cli.herokuapp.com")
+                sublime.error_message(message)
+    except:
+        sublime.error_message("Sublime Lightning Plugin requires the " +
+                              "Force.com CLI to functionn\n\nPlease " +
+                              "visit force-cli.herokuapp.com to install" +
+                              "the Force.com CLI.\n\nIf you have already" +
+                              " installed it, please make sure that you " +
+                              "have stored it or created a symlink to " +
+                              "it in Sublime's default path.")
+    return
 
 
 class Helper(sublime_plugin.WindowCommand):
@@ -129,6 +157,12 @@ class Helper(sublime_plugin.WindowCommand):
              'working_dir': self.window.folders()[0]})
         return
 
+    def get_forcecli_version(self):
+        p = subprocess.Popen(["force", "version"], stdout=subprocess.PIPE)
+        version = p.communicate()[0].decode("utf-8")
+        print("You are running version " + version + " of the Force CLI.")
+        return version.replace("\n", "")
+
     def show_metadata_instance_list(self, metaname):
         self.type = metaname
         self.messages = []
@@ -228,7 +262,8 @@ class Helper(sublime_plugin.WindowCommand):
     def make_bundle_file(self, file_name, extension, snippet, dirs):
         working_dir = dirs[0]
         os.chdir(working_dir)
-        if extension == "cmp" or extension == "app" or extension == "evt":
+        e = extension
+        if e == "cmp" or e == "app" or e == "intf" or e == "evt":
             fn, ex = os.path.splitext(file_name)
             os.mkdir(os.path.join(working_dir, file_name))
             os.chdir(fn)
@@ -285,6 +320,8 @@ class Helper(sublime_plugin.WindowCommand):
 
 class LoginCommand(sublime_plugin.WindowCommand):
     def run(self):
+        version = Helper(self.window).get_forcecli_version()
+        print("Running version " + version + " of Force CLI!")
         self.window.show_input_panel(
             "Username: ",
             "",
@@ -334,13 +371,6 @@ class FetchPackageCommand(sublime_plugin.WindowCommand):
 
 class FetchCommand(sublime_plugin.WindowCommand):
     def run(self):
-        # self.window.show_input_panel(
-        #    "Bundle name: ",
-        #    "all",
-        #    self.do_fetch,
-        #    None,
-        #    None)
-        # pass
         Helper(self.window).show_bundle_list()
 
     def do_fetch(self, bundle):
@@ -409,6 +439,32 @@ class LightningNewEventCommand(sublime_plugin.WindowCommand):
             file_name,
             "evt",
             '<aura:event type="APPLICATION">\n\n</aura:event>',
+            self.dirs)
+        return
+
+    def is_visible(self, dirs):
+        return Helper(self.window).bundle_op_is_visible(dirs)
+
+
+class LightningNewInterfaceCommand(sublime_plugin.WindowCommand):
+    def run(self, dirs):
+        self.dirs = dirs
+        self.window.show_input_panel(
+            "Interface Name:",
+            "",
+            self.on_done,
+            None,
+            None)
+        pass
+
+    def on_done(self, file_name):
+        Helper(self.window).make_bundle_file(
+            file_name,
+            "intf",
+            '<aura:interface description="Interface template">'
+            '\n\t<aura:attribute name="example" type="String" default="" '
+            'description="An example attribute."/>'
+            '\n</aura:interface>',
             self.dirs)
         return
 
@@ -737,25 +793,14 @@ class LightningSave(sublime_plugin.EventListener):
         return
 
 
-class LightningSaveBundleCommand(sublime_plugin.EventListener):
+class LightningSaveBundleCommand(sublime_plugin.WindowCommand):
 
-    def on_post_save(self, view):
-        filename = view.file_name()
-        if Helper.dir_is_aura(self, os.path.dirname(filename)):
-            if os.path.isDir(filename):
-                # get files in current dir
-                try:
-                    names = os.listdir(filename)
-                except Exception as e:
-                    print(e)
-                    return
-
-                for name in names:
-                    command = 'push -f=' + os.path.join(filename, name)
-                    view.window().run_command(
-                        'exec',
-                        {'cmd': ["force", "aura", command]})
-
+    def run(self, dirs):
+        print(dirs)
+        command = 'push -f=' + dirs[0]
+        self.window.run_command(
+            'exec',
+            {'cmd': ["force", "aura", command]})
         return
 
     def is_visible(self, dirs):
